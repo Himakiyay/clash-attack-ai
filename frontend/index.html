@@ -5,20 +5,37 @@
   <title>Clash Attack AI</title>
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
   <h1>Clash of Clans Attack AI</h1>
 
-  <label>Town Hall Level</label>
-  <select id="townHall">
-    <option value="9">TH9</option>
-    <option value="10">TH10</option>
-    <option value="11">TH11</option>
-  </select>
+  <!-- UI content -->
+  <section class="card">
+    <label>Town Hall Level</label>
+    <select id="townHall">
+      <option value="9">TH9</option>
+      <option value="10">TH10</option>
+      <option value="11">TH11</option>
+    </select>
+  </section>
 
-  <button onclick="simulate()">Simulate Attack</button>
+  <section class="card">
+    <h3>Select Army</h3>
+    <label><input type="checkbox" value="Hogs"> Hogs</label>
+    <label><input type="checkbox" value="Miners"> Miners</label>
+    <label><input type="checkbox" value="E-Drags"> Electro Dragons</label>
+    <label><input type="checkbox" value="Healers"> Healers</label>
+  </section>
 
-  <p id="result"></p>
+  <button onclick="runAI()">Simulate Attack</button>
 
-  <script src="script.js"></script>
+  <section class="output card">
+    <p id="attackAdvice"></p>
+    <p id="upgradeAdvice"></p>
+    <p id="simulationResult"></p>
+  </section>
+
+  <!-- ✅ SCRIPT GOES HERE -->
+  <script type="module" src="script.js"></script>
 </body>
 </html>
