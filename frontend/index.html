@@ -1,41 +1,141 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Clash Attack AI</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clash Attack AI - Complete Edition</title>
+  <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-  <h1>Clash of Clans Attack AI</h1>
-
-  <!-- UI content -->
-  <section class="card">
-    <label>Town Hall Level</label>
-    <select id="townHall">
-      <option value="9">TH9</option>
-      <option value="10">TH10</option>
-      <option value="11">TH11</option>
-    </select>
-  </section>
-
-  <section class="card">
-    <h3>Select Army</h3>
-    <label><input type="checkbox" value="Hogs"> Hogs</label>
-    <label><input type="checkbox" value="Miners"> Miners</label>
-    <label><input type="checkbox" value="E-Drags"> Electro Dragons</label>
-    <label><input type="checkbox" value="Healers"> Healers</label>
-  </section>
-
-  <button onclick="runAI()">Simulate Attack</button>
-
-  <section class="output card">
-    <p id="attackAdvice"></p>
-    <p id="upgradeAdvice"></p>
-    <p id="simulationResult"></p>
-  </section>
-
-  <!-- ✅ SCRIPT GOES HERE -->
+  <div class="app-container">
+    <header>
+      <h1>⚔️ Clash Attack AI</h1>
+      <p>AI-Powered Attack Strategy & Analysis</p>
+      <div class="user-info" id="userInfo"></div>
+    </header>
+    
+    <div id="authSection" class="tab-content active">
+      <div class="auth-form">
+        <div class="card">
+          <h3>Sign In / Sign Up</h3>
+          <input type="text" id="username" placeholder="Username" />
+          <input type="password" id="password" placeholder="Password" />
+          <button onclick="handleAuth()">Sign In</button>
+          <div id="authMessage"></div>
+        </div>
+      </div>
+    </div>
+    
+    <div id="appContent" class="hidden">
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('army-builder')">🎯 Army Builder</button>
+        <button class="tab" onclick="switchTab('ai-chat')">💬 AI Chat</button>
+        <button class="tab" onclick="switchTab('saved-strategies')">📋 Saved Strategies</button>
+        <button class="tab" onclick="switchTab('meta-guide')">📚 Meta Guide</button>
+      </div>
+      
+      <div id="army-builder" class="tab-content active">
+        <div class="card">
+          <h3>Select Town Hall Level</h3>
+          <select id="townHall" onchange="updateTroopsForTH()">
+            <option value="1">Town Hall 1</option>
+            <option value="2">Town Hall 2</option>
+            <option value="3">Town Hall 3</option>
+            <option value="4">Town Hall 4</option>
+            <option value="5">Town Hall 5</option>
+            <option value="6">Town Hall 6</option>
+            <option value="7">Town Hall 7</option>
+            <option value="8">Town Hall 8</option>
+            <option value="9" selected>Town Hall 9</option>
+            <option value="10">Town Hall 10</option>
+            <option value="11">Town Hall 11</option>
+            <option value="12">Town Hall 12</option>
+            <option value="13">Town Hall 13</option>
+            <option value="14">Town Hall 14</option>
+            <option value="15">Town Hall 15</option>
+            <option value="16">Town Hall 16</option>
+            <option value="17">Town Hall 17</option>
+            <option value="18">Town Hall 18</option>
+          </select>
+        </div>
+        
+        <div class="card">
+          <h3>Build Your Army</h3>
+          
+          <div class="troop-category">
+            <h4>⚔️ Elixir Troops</h4>
+            <div class="troop-grid" id="elixirTroops"></div>
+          </div>
+          
+          <div class="troop-category">
+            <h4>🌙 Dark Elixir Troops</h4>
+            <div class="troop-grid" id="darkTroops"></div>
+          </div>
+          
+          <div class="troop-category">
+            <h4>✨ Spells</h4>
+            <div class="troop-grid" id="spells"></div>
+          </div>
+          
+          <div class="troop-category" id="heroSection">
+            <h4>👑 Heroes</h4>
+            <div class="troop-grid" id="heroes"></div>
+          </div>
+          
+          <div class="troop-category hidden" id="petSection">
+            <h4>🐾 Pets</h4>
+            <div class="troop-grid" id="pets"></div>
+          </div>
+        </div>
+        
+        <div class="card">
+          <h3>Your Thoughts & Notes</h3>
+          <textarea id="userNotes" rows="4" style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid #e0e0e0; font-family: inherit; font-size: 16px;" placeholder="Add your own notes about this army composition, strategy tips, or preferences..."></textarea>
+        </div>
+        
+        <div style="text-align: center;">
+          <button onclick="analyzeAttack()">🎯 Analyze Attack</button>
+          <button onclick="saveStrategy()">💾 Save Strategy</button>
+        </div>
+        
+        <div id="analysisResults" class="hidden"></div>
+      </div>
+      
+      <div id="ai-chat" class="tab-content">
+        <div class="card">
+          <h3>💬 Chat with Clash AI</h3>
+          <p>Ask anything about Clash of Clans strategy, troop combinations, base design, or attacking techniques!</p>
+        </div>
+        
+        <div class="chat-container">
+          <div class="chat-messages" id="chatMessages">
+            <div class="message assistant">
+              Hello! I'm your Clash of Clans AI assistant. Ask me anything about attack strategies, troop compositions, base layouts, or general gameplay tips for any Town Hall level!
+            </div>
+          </div>
+          <div class="chat-input-area">
+            <input type="text" class="chat-input" id="chatInput" placeholder="Ask about attack strategies, troops, heroes..." onkeypress="handleChatEnter(event)" />
+            <button class="send-btn" onclick="sendMessage()">Send</button>
+          </div>
+        </div>
+      </div>
+      
+      <div id="saved-strategies" class="tab-content">
+        <div class="card">
+          <h3>📋 Your Saved Strategies</h3>
+          <div id="strategiesList" class="saved-strategies"></div>
+        </div>
+      </div>
+      
+      <div id="meta-guide" class="tab-content">
+        <div class="card">
+          <h3>📚 Current Meta Strategies (2025)</h3>
+          <div id="metaGuide"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
   <script type="module" src="script.js"></script>
 </body>
 </html>
