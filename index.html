@@ -16,12 +16,29 @@
     
     <div id="authSection" class="tab-content active">
       <div class="auth-form">
-        <div class="card">
-          <h3>Sign In / Sign Up</h3>
-          <input type="text" id="username" placeholder="Username" />
-          <input type="password" id="password" placeholder="Password" />
-          <button onclick="handleAuth()">Sign In</button>
-          <div id="authMessage"></div>
+        <div class="card auth-card">
+          <h3>Welcome</h3>
+          <p class="auth-subtitle">Profiles and strategies are stored only in this browser—not on a server.</p>
+          <div class="auth-mode-toggle" role="tablist" aria-label="Account mode">
+            <button type="button" id="authModeSignIn" class="auth-mode-btn active" role="tab" aria-selected="true">Sign in</button>
+            <button type="button" id="authModeSignUp" class="auth-mode-btn" role="tab" aria-selected="false">Create account</button>
+          </div>
+          <form id="authForm" novalidate>
+            <label for="username" class="auth-label">Username</label>
+            <input type="text" id="username" name="username" placeholder="Your username" autocomplete="username" maxlength="32" />
+            <label for="password" class="auth-label">Password</label>
+            <div class="password-field">
+              <input type="password" id="password" name="password" placeholder="Password" autocomplete="current-password" maxlength="128" />
+              <button type="button" class="password-toggle" id="togglePassword" aria-label="Show password">Show</button>
+            </div>
+            <div id="confirmPasswordWrap" class="hidden">
+              <label for="confirmPassword" class="auth-label">Confirm password</label>
+              <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter password" autocomplete="new-password" maxlength="128" />
+            </div>
+            <p class="auth-hint" id="authHint">Use your existing username and password.</p>
+            <button type="submit" id="authSubmitBtn">Sign in</button>
+            <div id="authMessage" role="status" aria-live="polite"></div>
+          </form>
         </div>
       </div>
     </div>

@@ -2,6 +2,10 @@ import { ELIXIR_TROOPS, DARK_TROOPS, HEROES, HERO_PETS, ALL_SPELLS, TOWN_HALL_DA
 
 let currentUser = null;
 let chatHistory = [];
+let authMode = 'signin';
+const SESSION_KEY = 'clashAttackSession';
+const MIN_PASSWORD_LEN = 8;
+const USERNAME_RE = /^[a-zA-Z0-9_]{2,32}$/;
 
 // Storage wrapper to use localStorage instead of window.storage
 const storage = {
@@ -29,62 +33,241 @@ const storage = {
   }
 };
 
+function randomSaltHex() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function derivePasswordHash(password, saltHex) {
+  if (!saltHex || saltHex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(saltHex)) {
+    throw new Error('Invalid password data');
+  }
+  const enc = new TextEncoder();
+  const pairs = saltHex.match(/.{1,2}/g);
+  if (!pairs) throw new Error('Invalid password data');
+  const salt = Uint8Array.from(pairs.map((b) => parseInt(b, 16)));
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 120_000, hash: 'SHA-256' },
+    keyMaterial,
+    256
+  );
+  return Array.from(new Uint8Array(bits))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function normalizeUsername(raw) {
+  return raw.trim();
+}
+
+function validateUsername(username) {
+  if (!USERNAME_RE.test(username)) {
+    return 'Use 2–32 characters: letters, numbers, or underscore only.';
+  }
+  return null;
+}
+
+/** Sign-in must accept older accounts (hyphens, etc.); signup stays strict. */
+function validateUsernameSignIn(username) {
+  const t = username.trim();
+  if (!t) return 'Please enter your username.';
+  if (t.length > 32) return 'Username must be 32 characters or fewer.';
+  return null;
+}
+
+function validatePasswordForSignup(password) {
+  if (password.length < MIN_PASSWORD_LEN) {
+    return `Password must be at least ${MIN_PASSWORD_LEN} characters.`;
+  }
+  return null;
+}
+
+async function verifyStoredPassword(user, password) {
+  if (user.passwordHash && user.salt) {
+    try {
+      const hash = await derivePasswordHash(password, user.salt);
+      return hash === user.passwordHash;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  }
+  if (user.password != null) {
+    return user.password === password;
+  }
+  return false;
+}
+
+async function persistUserHashed(userKey, user, password) {
+  const { username, strategies } = user;
+  const salt = randomSaltHex();
+  const passwordHash = await derivePasswordHash(password, salt);
+  await storage.set(
+    userKey,
+    JSON.stringify({
+      username,
+      salt,
+      passwordHash,
+      strategies: strategies || []
+    })
+  );
+}
+
 // Auth functions
-window.handleAuth = async function() {
-  const username = document.getElementById('username').value;
+window.handleAuth = async function (event) {
+  if (event && event.preventDefault) event.preventDefault();
+  const username = normalizeUsername(document.getElementById('username').value);
   const password = document.getElementById('password').value;
+  const confirmEl = document.getElementById('confirmPassword');
   const msgDiv = document.getElementById('authMessage');
-  
-  if (!username || !password) {
-    msgDiv.innerHTML = '<div class="error-message">Please enter username and password</div>';
+
+  const nameErr =
+    authMode === 'signup' ? validateUsername(username) : validateUsernameSignIn(username);
+  if (nameErr) {
+    msgDiv.innerHTML = `<div class="error-message">${nameErr}</div>`;
     return;
   }
-  
+  if (!password) {
+    msgDiv.innerHTML = '<div class="error-message">Please enter your password.</div>';
+    return;
+  }
+
   try {
-    const userKey = `user:${username}`;
-    const userData = await storage.get(userKey);
-    
-    if (userData) {
-      // Login
-      const user = JSON.parse(userData.value);
-      if (user.password === password) {
-        currentUser = username;
-        showApp();
-        loadUserData();
-      } else {
-        msgDiv.innerHTML = '<div class="error-message">Invalid password</div>';
+    const rawUsername = document.getElementById('username').value;
+    const trimmedKey = `user:${username}`;
+    let userData = await storage.get(trimmedKey);
+    let resolvedKey = trimmedKey;
+    if (!userData && rawUsername !== username) {
+      const rawKey = `user:${rawUsername}`;
+      const rawData = await storage.get(rawKey);
+      if (rawData) {
+        userData = rawData;
+        resolvedKey = rawKey;
       }
-    } else {
-      // Sign up
-      await storage.set(userKey, JSON.stringify({ username, password, strategies: [] }));
+    }
+
+    if (authMode === 'signup') {
+      if (!window.crypto?.subtle) {
+        msgDiv.innerHTML =
+          '<div class="error-message">Creating an account needs Web Crypto. Use <strong>http://localhost</strong> or HTTPS (not <code>file://</code> or some LAN URLs).</div>';
+        return;
+      }
+      const pwErr = validatePasswordForSignup(password);
+      if (pwErr) {
+        msgDiv.innerHTML = `<div class="error-message">${pwErr}</div>`;
+        return;
+      }
+      if (password !== confirmEl.value) {
+        msgDiv.innerHTML = '<div class="error-message">Passwords do not match.</div>';
+        return;
+      }
+      if (userData) {
+        msgDiv.innerHTML =
+          '<div class="error-message">That username is already taken. Sign in instead or pick another name.</div>';
+        return;
+      }
+      await persistUserHashed(trimmedKey, { username, strategies: [] }, password);
       currentUser = username;
-      msgDiv.innerHTML = '<div class="success-message">Account created! Logging in...</div>';
+      saveSession(username);
+      msgDiv.innerHTML = '<div class="success-message">Account created. Opening the app…</div>';
       setTimeout(() => {
         showApp();
         loadUserData();
-      }, 1000);
+      }, 400);
+      return;
     }
+
+    // Sign in
+    if (!userData) {
+      msgDiv.innerHTML =
+        '<div class="error-message">No account found for that username. Use “Create account” to register.</div>';
+      return;
+    }
+    const user = JSON.parse(userData.value);
+    if (user.passwordHash && user.salt && !window.crypto?.subtle) {
+      msgDiv.innerHTML =
+        '<div class="error-message">This account uses an encrypted password. Open the app via <strong>http://localhost</strong> or HTTPS so your browser can verify it.</div>';
+      return;
+    }
+    const ok = await verifyStoredPassword(user, password);
+    if (!ok) {
+      msgDiv.innerHTML = '<div class="error-message">Incorrect password.</div>';
+      return;
+    }
+    if (user.password != null && !user.passwordHash && window.crypto?.subtle) {
+      try {
+        await persistUserHashed(resolvedKey, user, password);
+      } catch (e) {
+        console.error('Could not upgrade stored password', e);
+      }
+    }
+    currentUser = typeof user.username === 'string' ? user.username : username;
+    saveSession(currentUser);
+    showApp();
+    loadUserData();
   } catch (error) {
-    msgDiv.innerHTML = '<div class="error-message">Error: ' + error.message + '</div>';
+    msgDiv.innerHTML = '<div class="error-message">Something went wrong. Please try again.</div>';
+    console.error(error);
   }
 };
+
+function saveSession(username) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ username, at: Date.now() }));
+  } catch (e) {
+    console.warn('Could not save session', e);
+  }
+}
+
+function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch (e) {
+    /* ignore */
+  }
+}
 
 function showApp() {
   document.getElementById('authSection').classList.add('hidden');
   document.getElementById('appContent').classList.remove('hidden');
-  document.getElementById('userInfo').innerHTML = `👤 ${currentUser} | <a href="#" onclick="logout()" style="color: white; text-decoration: none;">Logout</a>`;
+  document.getElementById('userInfo').innerHTML = `👤 ${escapeHtml(currentUser)} | <a href="#" id="logoutLink" style="color: white; text-decoration: none;">Log out</a>`;
+  const logoutLink = document.getElementById('logoutLink');
+  if (logoutLink) {
+    logoutLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      logout();
+    });
+  }
   updateTroopsForTH();
   loadSavedStrategies();
   loadMetaGuide();
 }
 
-window.logout = function() {
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+window.logout = function () {
   currentUser = null;
   chatHistory = [];
+  clearSession();
   document.getElementById('authSection').classList.remove('hidden');
   document.getElementById('appContent').classList.add('hidden');
   document.getElementById('username').value = '';
   document.getElementById('password').value = '';
+  const c = document.getElementById('confirmPassword');
+  if (c) c.value = '';
+  document.getElementById('authMessage').innerHTML = '';
   document.getElementById('chatMessages').innerHTML = `
     <div class="message assistant">
       Hello! I'm your Clash of Clans AI assistant. Ask me anything about attack strategies, troop compositions, base layouts, or general gameplay tips for any Town Hall level!
@@ -530,7 +713,94 @@ window.switchTab = function(tabName) {
   }
 };
 
+function setAuthMode(mode) {
+  authMode = mode;
+  const signInBtn = document.getElementById('authModeSignIn');
+  const signUpBtn = document.getElementById('authModeSignUp');
+  const wrap = document.getElementById('confirmPasswordWrap');
+  const hint = document.getElementById('authHint');
+  const submit = document.getElementById('authSubmitBtn');
+  const pass = document.getElementById('password');
+  if (mode === 'signup') {
+    signInBtn?.classList.remove('active');
+    signUpBtn?.classList.add('active');
+    signInBtn?.setAttribute('aria-selected', 'false');
+    signUpBtn?.setAttribute('aria-selected', 'true');
+    wrap?.classList.remove('hidden');
+    if (hint) hint.textContent = `Choose a password of at least ${MIN_PASSWORD_LEN} characters.`;
+    if (submit) submit.textContent = 'Create account';
+    pass?.setAttribute('autocomplete', 'new-password');
+  } else {
+    signUpBtn?.classList.remove('active');
+    signInBtn?.classList.add('active');
+    signUpBtn?.setAttribute('aria-selected', 'false');
+    signInBtn?.setAttribute('aria-selected', 'true');
+    wrap?.classList.add('hidden');
+    if (hint) hint.textContent = 'Use your existing username and password.';
+    if (submit) submit.textContent = 'Sign in';
+    pass?.setAttribute('autocomplete', 'current-password');
+  }
+  document.getElementById('authMessage').innerHTML = '';
+}
+
+async function tryRestoreSession() {
+  let raw;
+  try {
+    raw = localStorage.getItem(SESSION_KEY);
+  } catch (e) {
+    return;
+  }
+  if (!raw) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    clearSession();
+    return;
+  }
+  const username = typeof parsed.username === 'string' ? normalizeUsername(parsed.username) : '';
+  if (!username || validateUsernameSignIn(username)) {
+    clearSession();
+    return;
+  }
+  const userKey = `user:${username}`;
+  const userData = await storage.get(userKey);
+  if (!userData) {
+    clearSession();
+    return;
+  }
+  try {
+    const u = JSON.parse(userData.value);
+    currentUser = typeof u.username === 'string' ? u.username : username;
+  } catch {
+    currentUser = username;
+  }
+  showApp();
+  loadUserData();
+}
+
 // Initialize on load
 window.addEventListener('DOMContentLoaded', () => {
-  // Nothing needed here yet, everything initializes when user logs in
+  document.getElementById('authForm')?.addEventListener('submit', (e) => handleAuth(e));
+  document.getElementById('authModeSignIn')?.addEventListener('click', () => setAuthMode('signin'));
+  document.getElementById('authModeSignUp')?.addEventListener('click', () => setAuthMode('signup'));
+
+  const toggleBtn = document.getElementById('togglePassword');
+  const passInput = document.getElementById('password');
+  toggleBtn?.addEventListener('click', () => {
+    if (!passInput) return;
+    const show = passInput.type === 'password';
+    passInput.type = show ? 'text' : 'password';
+    toggleBtn.textContent = show ? 'Hide' : 'Show';
+    toggleBtn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  });
+
+  ['username', 'password', 'confirmPassword'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', () => {
+      const msg = document.getElementById('authMessage');
+      if (msg && !msg.innerHTML.includes('success-message')) msg.innerHTML = '';
+    });
+  });
+
+  tryRestoreSession();
 });
